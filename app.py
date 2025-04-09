@@ -1,5 +1,8 @@
 import os
 import importlib.util
+import zipfile
+import py7zr
+import rarfile
 
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
@@ -73,6 +76,45 @@ def upload_file():
     filename = secure_filename(file.filename)
     file.save(os.path.join("./train", filename))
     return jsonify({'message': '上传成功', 'filename': filename}), 200
+
+
+@app.route('/upload_zip', methods=['POST'])
+def upload_zip():
+    """
+    zip
+    :return:
+    """
+    if 'zip' not in request.files:
+        return jsonify({'error': '未上传压缩包'}), 400
+    zip_file = request.files['zip']
+    with zipfile.ZipFile(zip_file) as zf:
+        zf.extractall("./train")
+    return '文件夹已解压'
+
+
+@app.route('/upload_7z', methods=['POST'])
+def upload_7z():
+    """
+    7z
+    :return:
+    """
+    zip_file = None
+    if '7z' in request.files:
+        zip_file = request.files['7z']
+    elif 'zip' in request.files:
+        zip_file = request.files['zip']
+    elif 'rar' in request.files:
+        zip_file = request.files['rar']
+    if zip_file is None:
+        return jsonify({'error': '未上传压缩包'}), 400
+    with py7zr.SevenZipFile(zip_file.filename, 'r') as z:
+        z.extractall("./train")  # 解压到当前目录
+    return f'文件夹已解压'
+
+
+def open_zip_file(zip_file):
+    with rarfile.RarFile('file.rar') as rf:
+        rf.extractall('output_dir')
 
 
 if __name__ == '__main__':
