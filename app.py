@@ -9,12 +9,11 @@ from werkzeug.utils import secure_filename
 from flask_cors import CORS
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'  # 指定上传目录
+app.config['UPLOAD_FOLDER'] = './train'  # 指定上传目录
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 限制文件大小（如16MB）[1,6](@ref)
 CORS(app,
      origins=["http://localhost:3000"],  # 允许的源
      methods=["GET", "POST"],  # 允许的HTTP方法
-     allow_headers=["Content-Type", "Authorization"],  # 允许的请求头
      supports_credentials=True)  # 允许携带Cookie（需指定具体域名）
 
 
@@ -23,7 +22,7 @@ def hello_world():  # put application's code here
     return 'Hello World!'
 
 
-@app.route('/train')
+@app.route(rule='/train')
 def train_def():
     name = request.args.get('algorithm_name')
     json_data = request.get_json()
@@ -64,57 +63,97 @@ def run_train_functions(algorithm_name, param):
     return result_str
 
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
+@app.route(rule='/upload', methods=['POST'])
+def upload():
+    """
+    上传文件，压缩包
+    :return:
+    """
+    data_file = None
+    save_file_dir = "./train"
+    save_file_status = True
+    if 'file' in request.files:
+        data_file = request.files['file']
+        if data_file.filename.lower().endswith(".py"):
+            save_file_status = upload_file(data_file, save_file_dir)
+        if data_file.filename.lower().endswith(".7z"):
+            save_file_status = unzip_7z(data_file, save_file_dir)
+        elif data_file.filename.lower().endswith(".zip"):
+            save_file_status = unzip_zip(data_file, save_file_dir)
+        elif data_file.filename.lower().endswith(".rar"):
+            save_file_status = unzip_rar(data_file, save_file_dir)
+
+    if data_file is None:
         return jsonify({'error': '未上传文件'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': '文件名为空'}), 400
-
-    # 安全处理文件名并保存
-    filename = secure_filename(file.filename)
-    file.save(os.path.join("./train", filename))
-    return jsonify({'message': '上传成功', 'filename': filename}), 200
+    elif save_file_status is False:
+        return jsonify({'error': '出现错误'}), 400
+    return jsonify({'message': '上传成功', 'filename': data_file.filename}), 200
 
 
-@app.route('/upload_zip', methods=['POST'])
-def upload_zip():
+def upload_file(file, path):
+    try:
+        # 安全处理文件名并保存
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(path, filename))
+        return True, None
+
+    except FileNotFoundError as e:
+        return False, e
+    except Exception as e:
+        return False, e
+
+
+def unzip_7z(file, path):
     """
-    zip
+    7z文件解压
+    :param file:
+    :param path:
     :return:
     """
-    if 'zip' not in request.files:
-        return jsonify({'error': '未上传压缩包'}), 400
-    zip_file = request.files['zip']
-    with zipfile.ZipFile(zip_file) as zf:
-        zf.extractall("./train")
-    return '文件夹已解压'
+    try:
+        with py7zr.SevenZipFile(file.filename, 'r') as z:
+            z.extractall(path)  # 解压到当前目录
+            return True, None
+    except py7zr.exceptions.Bad7zFile as e:
+        return False, e
+    except FileNotFoundError as e:
+        return False, e
+    except Exception as e:
+        return False, e
 
 
-@app.route('/upload_7z', methods=['POST'])
-def upload_7z():
+def unzip_rar(file, path):
     """
-    7z
+    rar文件解压
+    :param file:
+    :param path:
     :return:
     """
-    zip_file = None
-    if '7z' in request.files:
-        zip_file = request.files['7z']
-    elif 'zip' in request.files:
-        zip_file = request.files['zip']
-    elif 'rar' in request.files:
-        zip_file = request.files['rar']
-    if zip_file is None:
-        return jsonify({'error': '未上传压缩包'}), 400
-    with py7zr.SevenZipFile(zip_file.filename, 'r') as z:
-        z.extractall("./train")  # 解压到当前目录
-    return f'文件夹已解压'
+    try:
+        with rarfile.RarFile(file) as rf:
+            rf.extractall(path)
+        return True, None
+    except FileNotFoundError as e:
+        return False, e
+    except Exception as e:
+        return False, e
 
 
-def open_zip_file(zip_file):
-    with rarfile.RarFile('file.rar') as rf:
-        rf.extractall('output_dir')
+def unzip_zip(file, path):
+    """
+    zip文件解压
+    :param file:
+    :param path:
+    :return:
+    """
+    try:
+        with zipfile.ZipFile(file) as zf:
+            zf.extractall(path)
+        return True, None
+    except FileNotFoundError as e:
+        return False, e
+    except Exception as e:
+        return False, e
 
 
 if __name__ == '__main__':
